@@ -1,0 +1,15 @@
+{
+  "player":
+    {
+      "kills": 1,
+      "deaths": -1,
+      "assists": 0.5,
+      "creepScore": 0.01
+    },
+  "team":
+    {
+      "towers": 1,
+      "barons": 2,
+      "dragon_count": 1
+    }
+}

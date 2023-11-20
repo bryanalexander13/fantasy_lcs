@@ -1,0 +1,26 @@
+{"1":
+  {
+    "team_name": "team name",
+    "owner": "owner",
+    "roster":
+    {
+      "current": {
+      "team": "team",
+      "top": "top",
+      "jg": "jg",
+      "mid": "mid",
+      "adc": "adc",
+      "sup": "sup"
+      },
+    "Week 1":
+    {
+      "team": "team",
+      "top": "top",
+      "jg": "jg",
+      "mid": "mid",
+      "adc": "adc",
+      "sup": "sup"
+      }
+    }
+  }
+}
