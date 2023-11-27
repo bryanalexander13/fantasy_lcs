@@ -1,10 +1,9 @@
-import sys
-sys.path.append(r"C:\Users\Bryan\Desktop\fantasy_lcs")
+
 import fantasy_lcs
 import streamlit as st
 from pathlib import Path
 import os
-#fantasy_lcs.FOLDER_PATH = str(Path.cwd())
+# fantasy_lcs.FOLDER_PATH = str(Path.cwd())
 
 def radio_callback():
     if st.session_state.radio == "Team":
@@ -24,9 +23,10 @@ def wraptexthtml(text, justify='left'):
 
 @st.cache_data
 def createScorekeeper():
-    return fantasy_lcs.ScoreKeeper(scoring_path=r'Desktop\fantasy_lcs\scoring.json',
-                                     teams_path=r'Desktop\fantasy_lcs\teams_test.json')
+    return fantasy_lcs.ScoreKeeper(scoring_path=r'scoring.json',
+                                     teams_path=r'teams_test.json')
 scorekeeper = createScorekeeper()
+
 # @st.cache_data
 # def createHeader():
     # st.title('Fantasy LCS')

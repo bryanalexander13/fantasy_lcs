@@ -3,32 +3,13 @@ import requests
 import json
 import datetime
 import dateutil
-import math
 import _pickle as cPickle
 from pathlib import Path
 import random
 import uuid
-
-FOLDER_PATH = r"Desktop\fantasy_lcs"
-#FOLDER_PATH = str(Path.cwd())
-
-def dict_lookup(dict_list, key, value):
-    return list(filter(lambda x: x[key] == value, dict_list))
+from utils.lcs_api_wrapper import LoLEsportsAPI, dict_lookup
 
 class Team:
-
-    # def __init__(self, owner, roster, team_name):
-    #     self.team_name = team_name
-    #     self.owner = owner
-    #     for key in roster:
-    #         setattr(self, key, item_dict[key])
-    #
-    # @classmethod
-    # def load_player_from_file(cls):
-    #     with open('charactersave.json', 'r') as f:
-    #         data = json.loads(f.read())
-    #     return cls(**data)
-
     def __init__(self, id, owner, roster, team_name, wins=0, losses=0, draws=0):
         self.id = id
         self.owner = owner
@@ -197,7 +178,7 @@ class Player:
 
     def save(self):
         """save class as id"""
-        path = FOLDER_PATH + '\\player_data\\' + self.id +'.txt'
+        path = 'player_data\\' + self.id +'.txt'
         with open(path, 'wb') as file:
             cPickle.dump(self, file)
         file.close()
@@ -206,7 +187,7 @@ class Player:
     def load(cls, id, player_type=None, player_dict=None):
         """try load self.name.txt"""
         try:
-            path = FOLDER_PATH + '\\player_data\\' + id +'.txt'
+            path = 'player_data\\' + id +'.txt'
             with open(path, 'rb') as file:
                 new_cls = cPickle.load(file)
             file.close()
@@ -234,174 +215,9 @@ class Player:
     # def calc_week_score(self, week):
     #     self.week_score[week] = sum([self.score[game_id] for game_id in self.game_week_dict[week]])
 
-class LoLEsportsAPI:
-    def __init__(self):
-        self.API_KEY = '0TvQnueqKa5mxJntVWt0w4LpLfEkrV1Ta8rQBb9Z'
-        self.BASE_URL = 'https://esports-api.lolesports.com/persisted/gw'
-        self.MATCH_BASE_URL = 'https://feed.lolesports.com/livestats/v1'
-        self.headers = {'x-api-key': self.API_KEY}
 
-    def get_leagues(self, hl='en-US'):
-        URL = self.BASE_URL + '/getLeagues'
-        params = {'hl': hl}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()['data']['leagues']
-
-    def get_tournaments_for_league(self, league_id, hl='en-US'):
-        URL = self.BASE_URL + '/getTournamentsForLeague'
-        params = {'hl': hl, 'leagueId': league_id}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()['data']
-
-    def get_standings(self, tournament_id, hl='en-US'):
-        URL = self.BASE_URL + '/getStandings'
-        params = {'hl': hl, 'tournamentId': tournament_id}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()['data']
-
-    def get_live(self, hl='en-US'):
-        URL = self.BASE_URL + '/getLive'
-        params = {'hl': hl}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    def get_completed_events(self, tournament_id, hl='en-US'):
-        URL = self.BASE_URL + '/getCompletedEvents'
-        params = {'hl': hl, 'tournamentId': tournament_id}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    def get_event_details(self, match_id, hl='en-US'):
-        URL = self.BASE_URL + '/getEventDetails'
-        params = {'hl': hl, 'id': match_id}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    def get_games(self, match_id, hl='en-US'):
-        URL = self.BASE_URL + '/getGames'
-        params = {'hl': hl, 'id': match_id}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    def get_teams(self,  team_slug=None, hl='en-US'):
-        URL = self.BASE_URL + '/getTeams'
-        params = {'hl': hl, 'id': team_slug}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    def get_schedule(self, league_id, page_token=None, hl='en-US'):
-        URL = self.BASE_URL + '/getSchedule'
-        params = {'hl': hl, 'leagueId': league_id, 'pageToken': page_token}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()['data']
-
-    def get_window(self, game_id, start_time=None, hl='en-US'):
-        URL = self.MATCH_BASE_URL + '/window' + '/' + str(game_id)
-        params = {'hl': hl, 'startingTime': start_time}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    def get_details(self, game_id, start_time=None, hl='en-US'):
-        URL = self.MATCH_BASE_URL + '/details' + '/' + str(game_id)
-        params = {'hl': hl, 'startingTime': start_time}
-        resp = requests.get(URL, params=params, headers=self.headers)
-        return resp.json()
-
-    # Derivative Pulls
-#     def get_team_stats(self, game_id, team_id, start_time=None, hl='en-US'):
-#         window = self.get_window(game_id=game_id, start_time=start_time)
-#         game_meta_data = window['gameMetadata']
-#         if game_meta_data['blueTeamMetadata']['esportsTeamId'] == team_id:
-#             team_side = 'blueTeam'
-#         elif game_meta_data['redTeamMetadata']['esportsTeamId'] == team_id:
-#             team_side = 'redTeam'
-#         stats = window['frames'][-1][team_side]
-#         return stats
-#
-#     def get_player_stats(self, game_id, player_id, start_time=None, hl='en-US'):
-#         window = self.get_window(game_id=game_id, start_time=start_time)
-#         game_meta_data = window['gameMetadata']
-#         player_dict = dict_lookup(game_meta_data['blueTeamMetadata']['participantMetadata'] + game_meta_data['redTeamMetadata']['participantMetadata'],
-#                                   key='esportsPlayerId', value=player_id)[0]
-#         if player_dict['participantId'] >= 6:
-#             part_team = 'redTeam'
-#         else:
-#             part_team = 'blueTeam'
-#
-#         stats = dict_lookup(window['frames'][-1][part_team]['participants'], key='participantId',
-#                             value=player_dict['participantId'])[0]
-#         return stats
-#
 # #######################
-    def get_game_id_from_match_id(self, match_id):
-        """
-        Returns game_id for a given match_id
-        """
-        return self.get_event_details(match_id)['data']['event']['match']['games'][0]['id']
 
-    def get_latest_frame_data(self, game_id):
-        """
-        Returns dict of game metadata, dict of game stats for latest time available
-        """
-        now = datetime.datetime.now()
-        latest_time = now.replace(second=math.floor(now.second / 10) * 10, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
-        window = self.get_window(game_id, start_time=latest_time)
-        frame_times = [dateutil.parser.parse(x['rfc460Timestamp']) for x in window['frames']]
-        latest_frame_index = frame_times.index(max(frame_times))
-        game_metadata = window['gameMetadata']
-        # add match and game id to the metadata dict
-        game_metadata['esportsGameId'] = window['esportsGameId']
-        game_metadata['esportsMatchId'] = window['esportsMatchId']
-        return window['gameMetadata'], dict_lookup(window['frames'], 'rfc460Timestamp', window['frames'][latest_frame_index]['rfc460Timestamp'])[0]
-
-    #
-    # def get_game_metadata(self, game_id):
-    #     """
-    #     Returns dict of game metadata
-    #     """
-    #     now = datetime.datetime.now()
-    #     latest_time = now.replace(second=math.floor(now.second / 10) * 10, microsecond=0).strftime('%Y-%m-%dT%H:%M:%SZ')
-    #     window = self.get_window(game_id, start_time=latest_time)
-    #     return window['gameMetadata']
-
-    def get_player_stats(self, game_id, player_id, player_role):
-        """
-        Returns player stats dict for latest frame for a specified game
-        """
-        game_metadata, frame_data = self.get_latest_frame_data(game_id)
-
-        if player_role == 'team':
-            if game_metadata['blueTeamMetadata']['esportsTeamId'] == player_id:
-                part_team = 'blueTeam'
-            elif game_metadata['redTeamMetadata']['esportsTeamId'] == player_id:
-                part_team = 'redTeam'
-            player_stats = frame_data[part_team]
-            player_stats = {key: val for key, val in player_stats.items() if key != 'participants'}
-        else:
-            player_dict = dict_lookup(game_metadata['blueTeamMetadata']['participantMetadata'] + game_metadata['redTeamMetadata']['participantMetadata'],
-                                      key='esportsPlayerId', value=player_id)[0]
-            if player_dict['participantId'] >= 6:
-                part_team = 'redTeam'
-            else:
-                part_team = 'blueTeam'
-
-            player_stats = dict_lookup(frame_data[part_team]['participants'], key='participantId',
-                                       value=player_dict['participantId'])[0]
-            player_stats['championId'] = player_dict['championId']
-        game_status = frame_data['gameState']
-        return game_metadata, player_stats, game_status
-
-    def get_team_stats(self, game_id, team_id):
-        """
-        Returns team stats dict for latest frame for a specified game
-        """
-        game_metadata, frame_data = self.get_latest_frame_data(game_id)
-        if game_metadata['blueTeamMetadata']['esportsTeamId'] == team_id:
-            team_side = 'blueTeam'
-        elif game_metadata['redTeamMetadata']['esportsTeamId'] == team_id:
-            team_side = 'redTeam'
-        team_stats = frame_data[team_side]
-        return team_stats
 
 class ScoreKeeper:
     def __init__(self, LEAGUE_ID='98767991299243165', TOURNAMENT_SLUG='lcs_spring_2023', scoring_path='scoring.json', teams_path='teams_test.json'):
@@ -549,9 +365,6 @@ class ScoreKeeper:
             for match_id, match_data in matches.items():
                 matches_dict[week] = matches_dict[week] + [Match(match_id, self.find_team(match_data[0]), self.find_team(match_data[1]), week)]
         self.matches = matches_dict
-        # scoreboard = {}
-        # for week, matches in self.schedule.items():
-        #     scoreboard[k] = {}
 
     def get_teams_by_match(self, week, match_id):
         temp_match_schedule = self.week_match_dict[week]
@@ -631,16 +444,12 @@ class Match:
         if team_num == 2:
             return getattr(self.team2, pos).player_score[self.week]
 
-
-
     def return_scores(self):
         return {"team1": {"team": self.team1, "score": self.team1_score}, "team2": {"team": self.team2, "score": self.team2_score}}
 
     def run_match(self, api_session, scoring_dict):
         self.get_scores(api_session, scoring_dict)
         self.check_game_status()
-
-
 
 
 # api_session = LoLEsportsAPI()
