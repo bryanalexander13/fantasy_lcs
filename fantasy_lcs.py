@@ -237,6 +237,28 @@ class ScoreKeeper:
         self.run()
 
     def get_full_schedule(self, LEAGUE_ID, TOURNAMENT_SLUG):
+        """
+        Pulls scheduled matches from API and stores list of dict in self.schedule
+        Ex.
+        {'startTime': '2023-01-26T22:00:00Z',
+          'state': 'completed',
+          'type': 'match',
+          'blockName': 'Week 1',
+          'league': {'name': 'LCS', 'slug': 'lcs'},
+          'match': {'id': '109517090067719730',
+           'flags': ['hasVod'],
+           'teams': [{'name': '100 Thieves',
+             'code': '100',
+             'image': 'http://static.lolesports.com/teams/1631819887423_100t-2021-worlds.png',
+             'result': {'outcome': 'loss', 'gameWins': 0},
+             'record': {'wins': 12, 'losses': 8}},
+            {'name': 'Cloud9',
+             'code': 'C9',
+             'image': 'http://static.lolesports.com/teams/1631820065346_cloud9-2021-worlds.png',
+             'result': {'outcome': 'win', 'gameWins': 1},
+             'record': {'wins': 15, 'losses': 4}}],
+           'strategy': {'type': 'bestOf', 'count': 1}}}
+        """
         all_tournament_dict = self.api_session.get_tournaments_for_league(LEAGUE_ID)['leagues'][0]['tournaments']
         tournament_dict = dict_lookup(all_tournament_dict, key='slug', value=self.TOURNAMENT_SLUG)[0]
 
@@ -271,6 +293,10 @@ class ScoreKeeper:
         self.schedule = schedule
 
     def init_lcs_teams(self):
+        """
+        Pulls all teams associated with LCS with player data and stores in self.lcs_teams
+        Stores dict of LCS team id in self.lcs_team_id
+        """
         all_teams = self.api_session.get_teams(None)['data']['teams']
 
         filtered_all_teams = list(filter(lambda x: 'homeLeague' in x.keys(), all_teams))
@@ -279,6 +305,9 @@ class ScoreKeeper:
         self.lcs_team_id = {team['id']: team['code'] for team in self.lcs_teams}
 
     def get_org_by_id(self, id):
+        """
+        Helper function the returns team org given id
+        """
         return self.lcs_team_id.get(id)
 
     def get_weekly_match_dicts(self):
@@ -309,16 +338,19 @@ class ScoreKeeper:
             self.teams.append(Team(key, data[key]['owner'], data[key]['roster'], data[key]['name'], data[key]['wins'], data[key]['losses']))
 
     def find_team(self, team_id):
+        """Returns team given id"""
         team_index = [team.id for team in self.teams].index(team_id)
         return self.teams[team_index]
 
     def load_scoring(self):
+        """Loads scoring dict from file"""
         print("Loading Scoring...")
         with open(self.scoring_path, 'r') as f:
             data = json.loads(f.read())
         self.scoring = data
 
     def assign_games_to_players(self):
+        """Loops through match ids and adds id to player object"""
         for key, value in self.week_match_id_dict.items():
             for match_id in value:
                 game_id = self.api_session.get_game_id_from_match_id(match_id)
@@ -333,6 +365,7 @@ class ScoreKeeper:
                     Player.load(player['esportsPlayerId'], player_dict=player).add_game_id(key, game_id)
 
     def load_schedule(self):
+        """Loads or generates schedule for fantasy teams"""
         try:
             with open('schedule.json', 'r') as f:
                 data = json.loads(f.read())
@@ -443,6 +476,11 @@ class Match:
             return getattr(self.team1, pos).player_score[self.week]
         if team_num == 2:
             return getattr(self.team2, pos).player_score[self.week]
+
+    def get_player_scoreline(self, team_num, pos, week, game_id):
+        player_stats = getattr(getattr(self, f'team{team_num}'), player_role).get_player_stats(week, game_id)
+        scoreline = f"{player_stats.get('kills')}/{player_stats.get('deaths')}/{player_stats.get('assists')}"
+        return scoreline
 
     def return_scores(self):
         return {"team1": {"team": self.team1, "score": self.team1_score}, "team2": {"team": self.team2, "score": self.team2_score}}
