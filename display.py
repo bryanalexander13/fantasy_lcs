@@ -1,4 +1,3 @@
-
 import fantasy_lcs
 import streamlit as st
 from pathlib import Path
@@ -73,24 +72,6 @@ scorekeeper.match_schedule.keys(),
  )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 # scorekeeper.week_match_dict
 #
 # scorekeeper.get_player_stats('109517090067785414',)
@@ -155,6 +136,7 @@ def createMatchUpDisplay(week):
                 st.caption(wraptexthtml(scoreline + ' as ' + player_stats['championId'], 'right'), unsafe_allow_html=True)
                 if i < len(temp_game_dict.keys()) - 1:
                     st.caption('')
+
 
 def createLeagueDisplay(week):
     st.title('Matchups')
