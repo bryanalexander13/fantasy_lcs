@@ -10,6 +10,9 @@
     {
       "towers": 1,
       "barons": 2,
-      "dragon_count": 1
+      "dragon_count": 1,
+      "dragon_souls": 4,
+      "dragon_type_weekly_bonus": 1,
+      "elder_dragon_bonus": 4
     }
 }

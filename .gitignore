@@ -1,2 +1,6 @@
 __pycache__/
 *.pyc
+credentials.json
+player_data/
+data/
+.streamlit/secrets.toml
