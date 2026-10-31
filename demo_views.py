@@ -270,6 +270,11 @@ def _format_record(record):
     return result
 
 
+def _game_stat_text(game, field):
+    value = game.get(field) if game else None
+    return "—" if value is None else str(value)
+
+
 def _fixed_player_game_rows(line):
     games_by_number = {
         int(game.get("game", index + 1)): game
@@ -284,12 +289,12 @@ def _fixed_player_game_rows(line):
             "Icon": champion["icon_url"],
             "Champion": champion["name"] or "—",
             "Opponent": game.get("opponent", "—") if game else "—",
-            "Kills": game.get("kills", "—") if game else "—",
-            "Deaths": game.get("deaths", "—") if game else "—",
-            "Assists": game.get("assists", "—") if game else "—",
-            "CS": game.get("creepScore", "—") if game else "—",
+            "Kills": _game_stat_text(game, "kills"),
+            "Deaths": _game_stat_text(game, "deaths"),
+            "Assists": _game_stat_text(game, "assists"),
+            "CS": _game_stat_text(game, "creepScore"),
             "Multiplier": f"{float(game.get('fantasy_multiplier', 1.0)):.2f}×" if game else "—",
-            "Fantasy points": game.get("fantasy_points", "—") if game else "—",
+            "Fantasy points": _game_stat_text(game, "fantasy_points"),
         })
     return rows
 
@@ -302,11 +307,11 @@ def _fixed_org_game_rows(org):
         rows.append({
             "Game": f"Game {game_number}",
             "Opponent": game.get("Opponent", "—") if game else "—",
-            "Towers": game.get("Towers", "—") if game else "—",
-            "Barons": game.get("Barons", "—") if game else "—",
-            "Dragons": game.get("Dragons", "—") if game else "—",
+            "Towers": _game_stat_text(game, "Towers"),
+            "Barons": _game_stat_text(game, "Barons"),
+            "Dragons": _game_stat_text(game, "Dragons"),
             "Dragon Soul": ("Yes" if game.get("Dragon Soul") else "No") if game else "—",
-            "Fantasy points": game.get("Fantasy points", "—") if game else "—",
+            "Fantasy points": _game_stat_text(game, "Fantasy points"),
         })
     return rows
 
