@@ -6,6 +6,12 @@ import sys
 if "--demo" in sys.argv:
     os.environ["FANTASY_DEMO"] = "1"
 
+import asyncio
+
+if sys.platform == 'win32':
+    # Forces Windows to use a selector loop that handles remote resets gracefully
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 import streamlit as st
 from demo_views import is_demo_mode, render_demo_league
 from storage import get_fantasy_team_profile, get_users, initialize_database, is_commissioner
