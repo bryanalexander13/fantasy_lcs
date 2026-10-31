@@ -4,3 +4,4 @@ credentials.json
 player_data/
 data/
 .streamlit/secrets.toml
+.streamlit/config.toml
