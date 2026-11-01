@@ -41,6 +41,10 @@ def initialize_database() -> None:
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
+            CREATE TABLE IF NOT EXISTS draft_page_presence (
+                user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                last_seen TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
             CREATE TABLE IF NOT EXISTS fantasy_teams (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -444,6 +448,30 @@ def reset_league_information(commissioner_id: int) -> None:
             league_id = '', region = 'North America', scheduled_at = NULL,
             turn_started_at = NULL, started_at = NULL, completed_at = NULL,
             draft_order_locked = 0 WHERE id = 1""")
+
+
+def touch_draft_page_presence(user_id: int) -> None:
+    """Record that an authenticated user is currently viewing the Draft page."""
+    with connect() as db:
+        db.execute("""
+            INSERT INTO draft_page_presence(user_id, last_seen)
+            VALUES (?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET last_seen = CURRENT_TIMESTAMP
+        """, (int(user_id),))
+
+
+def get_active_draft_page_user_ids(active_for_seconds: int = 30) -> set[int]:
+    """Return approved members who checked in on the Draft page recently."""
+    timeout = max(1, int(active_for_seconds))
+    with connect() as db:
+        rows = db.execute("""
+            SELECT presence.user_id
+            FROM draft_page_presence AS presence
+            JOIN users AS account ON account.id = presence.user_id
+            WHERE account.is_active = 1 AND account.is_approved = 1
+              AND presence.last_seen >= datetime('now', ?)
+        """, (f"-{timeout} seconds",)).fetchall()
+        return {int(row[0]) for row in rows}
 
 
 def get_matchup_weeks() -> list[str]:

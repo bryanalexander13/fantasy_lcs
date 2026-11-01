@@ -30,7 +30,10 @@ from draft import (
     start_draft,
 )
 from league_data import fetch_league_player_pool, get_regional_leagues
-from storage import SLOTS, get_fantasy_team_profile, get_users, is_commissioner
+from storage import (
+    SLOTS, get_fantasy_team_profile, get_users, is_commissioner,
+    touch_draft_page_presence, get_active_draft_page_user_ids,
+)
 from utils.champion_assets import random_champion_pick_quote
 from utils.lcs_api_wrapper import LoLEsportsAPIError
 
@@ -55,9 +58,18 @@ st.caption(
 if settings.get("scheduled_at"):
     st.info(f"Draft scheduled for {settings['scheduled_at']} (local time).")
 
+@st.fragment(run_every="10s")
+def draft_page_presence_heartbeat():
+    touch_draft_page_presence(user_id)
+
+
+draft_page_presence_heartbeat()
+
+
 @st.fragment(run_every="1s")
 def upcoming_picks_panel():
     upcoming_picks = get_upcoming_picks(4)
+    active_users = get_active_draft_page_user_ids()
     if upcoming_picks:
         with st.container(border=True):
             st.markdown("### Teams up next")
@@ -69,7 +81,9 @@ def upcoming_picks_panel():
                         st.image(pick["team_image"], width=68)
                     else:
                         st.markdown("## 🛡️")
-                    st.markdown(f"**{pick.get('team_name') or pick['display_name'] + ' Team'}**")
+                    status_dot = "🟢" if int(pick["user_id"]) in active_users else "🔴"
+                    team_name = pick.get("team_name") or f"{pick['display_name']} Team"
+                    st.markdown(f"{status_dot} **{team_name}**")
                     st.caption(pick["display_name"])
 
 
