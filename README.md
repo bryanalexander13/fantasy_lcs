@@ -29,6 +29,8 @@ After the draft is complete, owners can propose one-for-one trades with another 
 
 The shared API wrapper reads LOLESPORTS_API_KEY from the environment, lolesports_api_key from Streamlit secrets, or lolesportsapi_key from the ignored local credentials.json file. The CSV option does not require an API key. The commissioner must make sure the imported CSV contains the complete player pool for the chosen league.
 
+Login offers a 30-day “Keep me signed in” option. The app stores only a hash of each random remember-me token in SQLite, and revokes that token on logout or account removal. The browser cookie is marked Secure when the app URL uses HTTPS and uses SameSite=Strict. Because the Streamlit cookie component writes from the browser, the cookie cannot be marked HttpOnly; keep the app on HTTPS and only use trusted app content.
+
 Before the draft starts, account creation is open to people who can reach the app. Use a private network or add an invitation flow before public deployment. Public deployment should use HTTPS and persistent storage for the SQLite database. Do not commit credentials or the database.
 
 The app reads schedule.json and teams_test.json once to seed the static matchup list. It does not load legacy pickle files.

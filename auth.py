@@ -4,9 +4,102 @@ import secrets
 
 import streamlit as st
 
-from storage import create_user, find_user, get_user_access
+from storage import (
+    create_remember_token,
+    create_user,
+    find_user,
+    get_user_access,
+    get_user_by_remember_token,
+    revoke_remember_token,
+)
 
 _ITERATIONS = 310_000
+_REMEMBER_COOKIE = "fantasy_lcs_remember"
+_REMEMBER_DAYS = 30
+_COOKIE_MANAGER_STATE = "_fantasy_lcs_cookie_manager"
+_COOKIE_OPERATION_KEY = "fantasy_lcs_remember_cookie_operation"
+
+
+def _cookie_manager():
+    manager = st.session_state.get(_COOKIE_MANAGER_STATE)
+    if manager is None:
+        import extra_streamlit_components as stx
+        manager = stx.CookieManager(key="fantasy_lcs_auth_cookie_manager")
+        st.session_state[_COOKIE_MANAGER_STATE] = manager
+    if manager.cookies is None:
+        manager.cookies = {}
+    return manager
+
+
+def _delete_remember_cookie(token: str, cookie_manager=None) -> None:
+    manager = cookie_manager or _cookie_manager()
+    # CookieManager.delete removes the name from its local map after asking the
+    # browser to delete it; seed the map in case the component hasn't returned yet.
+    if manager.cookies is None:
+        manager.cookies = {}
+    manager.cookies[_REMEMBER_COOKIE] = token
+    manager.delete(_REMEMBER_COOKIE, key=_COOKIE_OPERATION_KEY)
+
+
+def _request_remember_cookie() -> str | None:
+    try:
+        value = st.context.cookies.get(_REMEMBER_COOKIE)
+    except Exception:
+        return None
+    return str(value) if value else None
+
+
+def _cookie_is_secure() -> bool:
+    try:
+        return str(st.context.url).lower().startswith("https://")
+    except Exception:
+        return False
+
+
+def _establish_login(user_id: int, display_name: str, keep_signed_in: bool, cookie_manager) -> None:
+    st.session_state["user_id"] = int(user_id)
+    st.session_state["display_name"] = display_name
+    if keep_signed_in:
+        token, expires_at = create_remember_token(user_id, _REMEMBER_DAYS)
+        st.session_state["_remember_token"] = token
+        cookie_manager.set(
+            _REMEMBER_COOKIE,
+            token,
+            key=_COOKIE_OPERATION_KEY,
+            path="/",
+            expires_at=expires_at,
+            secure=_cookie_is_secure(),
+            same_site="strict",
+        )
+
+
+def restore_login_from_cookie() -> int | None:
+    """Restore an authenticated user from the optional 30-day browser cookie."""
+    current_user_id = st.session_state.get("user_id")
+    if current_user_id:
+        account = get_user_access(int(current_user_id))
+        if account and account["is_active"] and account["is_approved"]:
+            return int(current_user_id)
+        st.session_state.pop("user_id", None)
+        st.session_state.pop("display_name", None)
+        token = st.session_state.pop("_remember_token", None) or _request_remember_cookie()
+        if token:
+            revoke_remember_token(token)
+            _delete_remember_cookie(token)
+            return None
+
+    token = _request_remember_cookie()
+    if not token:
+        return None
+    account = get_user_by_remember_token(token)
+    if account:
+        st.session_state["user_id"] = account["id"]
+        st.session_state["display_name"] = account["display_name"]
+        st.session_state["_remember_token"] = token
+        return int(account["id"])
+    revoke_remember_token(token)
+    _delete_remember_cookie(token)
+    return None
 
 
 def _hash_password(password: str) -> tuple[str, str]:
@@ -21,9 +114,11 @@ def _verify_password(password: str, salt_hex: str, digest_hex: str) -> bool:
 
 
 def login_form() -> None:
+    cookie_manager = _cookie_manager()
     with st.form("login"):
         username = st.text_input("Username").strip().lower()
         password = st.text_input("Password", type="password")
+        keep_signed_in = st.checkbox("Keep me signed in on this device for 30 days", value=True)
         submitted = st.form_submit_button("Log in", type="primary", use_container_width=True)
     if submitted:
         user = find_user(username)
@@ -34,18 +129,19 @@ def login_form() -> None:
             if not user.get("is_approved", 1):
                 st.info("Your account is waiting for commissioner approval.")
                 return
-            st.session_state["user_id"] = user["id"]
-            st.session_state["display_name"] = user["display_name"]
+            _establish_login(user["id"], user["display_name"], keep_signed_in, cookie_manager)
             st.rerun()
         st.error("Username or password is incorrect.")
 
 
 def register_form() -> None:
+    cookie_manager = _cookie_manager()
     with st.form("register"):
         display_name = st.text_input("Team owner name", max_chars=60).strip()
         username = st.text_input("Choose a username", max_chars=40).strip().lower()
         password = st.text_input("Choose a password", type="password")
         confirm = st.text_input("Confirm password", type="password")
+        keep_signed_in = st.checkbox("Keep me signed in on this device for 30 days", value=True)
         submitted = st.form_submit_button("Create account", type="primary", use_container_width=True)
     if not submitted:
         return
@@ -66,14 +162,14 @@ def register_form() -> None:
         return
     account = get_user_access(user_id)
     if account and account["is_approved"] and account["is_active"]:
-        st.session_state["user_id"] = user_id
-        st.session_state["display_name"] = display_name
+        _establish_login(user_id, display_name, keep_signed_in, cookie_manager)
         st.rerun()
     st.success("Account request submitted.")
     st.info("You can log in after the commissioner approves your account.")
 
 
 def require_login() -> int:
+    restore_login_from_cookie()
     user_id = st.session_state.get("user_id")
     if user_id:
         account = get_user_access(int(user_id))
@@ -82,6 +178,10 @@ def require_login() -> int:
             return int(user_id)
         st.session_state.pop("user_id", None)
         st.session_state.pop("display_name", None)
+        token = st.session_state.pop("_remember_token", None)
+        if token:
+            revoke_remember_token(token)
+            _delete_remember_cookie(token)
         if account and not account["is_approved"]:
             st.warning("Your account is waiting for commissioner approval.")
         else:
@@ -92,7 +192,13 @@ def require_login() -> int:
 
 
 def logout_button() -> None:
+    token = st.session_state.get("_remember_token") or _request_remember_cookie()
+    cookie_manager = _cookie_manager() if token else None
     if st.button("Log out", key="logout"):
+        if token:
+            revoke_remember_token(token)
+            _delete_remember_cookie(token, cookie_manager)
         st.session_state.pop("user_id", None)
         st.session_state.pop("display_name", None)
+        st.session_state.pop("_remember_token", None)
         st.rerun()

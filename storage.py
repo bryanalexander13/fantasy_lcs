@@ -1,8 +1,10 @@
+import hashlib
 import json
 import os
+import secrets
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -39,6 +41,12 @@ def initialize_database() -> None:
                 role TEXT NOT NULL DEFAULT 'owner',
                 is_approved INTEGER NOT NULL DEFAULT 1,
                 is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS auth_remember_tokens (
+                token_hash TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS draft_page_presence (
@@ -227,6 +235,59 @@ def find_user(username: str):
         return dict(row) if row else None
 
 
+def create_remember_token(user_id: int, lifetime_days: int = 30) -> tuple[str, datetime]:
+    """Create a random long-lived sign-in token, storing only its SHA-256 digest."""
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now(timezone.utc) + timedelta(days=max(1, int(lifetime_days)))
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        account = db.execute(
+            "SELECT is_active, is_approved FROM users WHERE id = ?", (int(user_id),)
+        ).fetchone()
+        if not account or not account["is_active"] or not account["is_approved"]:
+            raise ValueError("This account cannot create a persistent sign-in.")
+        now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        db.execute("DELETE FROM auth_remember_tokens WHERE expires_at <= ?", (now_iso,))
+        db.execute(
+            "INSERT INTO auth_remember_tokens(token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+            (token_hash, int(user_id), expires_at.isoformat(timespec="seconds")),
+        )
+    return token, expires_at
+
+
+def get_user_by_remember_token(token: str) -> dict | None:
+    """Validate a persistent sign-in token and return its active account."""
+    if not token or len(token) > 256:
+        return None
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with connect() as db:
+        row = db.execute("""
+            SELECT account.id, account.display_name, account.is_active, account.is_approved,
+                   session.expires_at
+            FROM auth_remember_tokens AS session
+            JOIN users AS account ON account.id = session.user_id
+            WHERE session.token_hash = ?
+        """, (token_hash,)).fetchone()
+        if not row:
+            return None
+        expires_at = datetime.fromisoformat(row["expires_at"])
+        if (not row["is_active"] or not row["is_approved"]
+                or expires_at <= datetime.now(timezone.utc)):
+            db.execute("DELETE FROM auth_remember_tokens WHERE token_hash = ?", (token_hash,))
+            return None
+        return {"id": int(row["id"]), "display_name": row["display_name"]}
+
+
+def revoke_remember_token(token: str | None) -> None:
+    """Revoke one browser's persistent sign-in token."""
+    if not token or len(token) > 256:
+        return
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with connect() as db:
+        db.execute("DELETE FROM auth_remember_tokens WHERE token_hash = ?", (token_hash,))
+
+
 def create_user(username: str, display_name: str, salt: str, digest: str) -> int:
     try:
         with connect() as db:
@@ -311,6 +372,7 @@ def remove_user_account(commissioner_id: int, target_user_id: int) -> str:
         status = draft["status"] if draft else "setup"
         if status == "in_progress":
             raise ValueError("Accounts cannot be removed during an active draft.")
+        db.execute("DELETE FROM auth_remember_tokens WHERE user_id = ?", (int(target_user_id),))
         if status == "setup":
             was_in_order = db.execute(
                 "SELECT 1 FROM draft_order WHERE user_id = ?", (int(target_user_id),)
@@ -329,6 +391,29 @@ def remove_user_account(commissioner_id: int, target_user_id: int) -> str:
                 db.execute("UPDATE draft_settings SET draft_order_locked = 0 WHERE id = 1")
             return "deleted"
         db.execute("UPDATE users SET is_active = 0 WHERE id = ?", (int(target_user_id),))
+        order_row = db.execute(
+            "SELECT position FROM draft_order WHERE user_id = ?", (int(target_user_id),)
+        ).fetchone()
+        if order_row:
+            db.execute("DELETE FROM draft_order WHERE user_id = ?", (int(target_user_id),))
+            remaining_order = [int(row[0]) for row in db.execute(
+                "SELECT user_id FROM draft_order ORDER BY position"
+            )]
+            if remaining_order:
+                max_position = int(db.execute(
+                    "SELECT COALESCE(MAX(position), 0) FROM draft_order"
+                ).fetchone()[0])
+                offset = max_position + 1
+                for remaining_user_id in remaining_order:
+                    db.execute(
+                        "UPDATE draft_order SET position = position + ? WHERE user_id = ?",
+                        (offset, remaining_user_id),
+                    )
+                for position, remaining_user_id in enumerate(remaining_order, start=1):
+                    db.execute(
+                        "UPDATE draft_order SET position = ? WHERE user_id = ?",
+                        (position, remaining_user_id),
+                    )
         return "disabled"
 
 
@@ -398,7 +483,7 @@ def is_commissioner(user_id: int) -> bool:
 
 
 def clear_draft_results(commissioner_id: int) -> None:
-    """Clear draft picks and generated league results while keeping the pool and locked order."""
+    """Clear draft results and order while keeping the imported pool and league accounts."""
     if not is_commissioner(commissioner_id):
         raise ValueError("Only the commissioner can clear draft results.")
     with connect() as db:
@@ -411,11 +496,12 @@ def clear_draft_results(commissioner_id: int) -> None:
         db.execute("DELETE FROM trade_proposals")
         db.execute("DELETE FROM roster_exchanges")
         db.execute("DELETE FROM draft_picks")
+        db.execute("DELETE FROM draft_order")
         db.execute("DELETE FROM fantasy_matchup_schedule")
         db.execute("DELETE FROM weekly_dragon_bonus")
         db.execute("DELETE FROM matchup_champion_choices")
-        db.execute("""UPDATE draft_settings SET status = 'setup', turn_started_at = NULL,
-            started_at = NULL, completed_at = NULL WHERE id = 1""")
+        db.execute("""UPDATE draft_settings SET status = 'setup', draft_order_locked = 0,
+            turn_started_at = NULL, started_at = NULL, completed_at = NULL WHERE id = 1""")
 
 
 def reset_league_information(commissioner_id: int) -> None:

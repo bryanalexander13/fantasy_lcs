@@ -78,7 +78,7 @@ for account in active_accounts:
         else:
             with action_col.popover("Remove account"):
                 if settings.get("status") == "complete":
-                    st.caption("Sign-in will be disabled. The team's draft and league history will remain.")
+                    st.caption("Sign-in will be disabled and the team removed from Draft order. Its saved rosters and league history will remain.")
                 elif settings.get("status") == "setup":
                     st.caption("This deletes the account. If the draft order was locked, it will need to be randomized again.")
                 else:
@@ -133,11 +133,11 @@ control_cols = st.columns(2, gap="large")
 with control_cols[0]:
     with st.popover("Clear draft results", width="stretch"):
         st.caption(
-            "Removes drafted rosters, schedule, trades, and champion picks/bans, then reopens the draft. "
-            "The imported player pool and locked draft order are kept."
+            "Removes drafted rosters, schedule, trades, champion picks/bans, and the saved draft order, then reopens the draft. "
+            "The imported player pool is kept, and the commissioner can randomize a new order."
         )
         with st.form("clear_draft_results_form"):
-            confirm_clear_draft = st.checkbox("I understand this clears draft and matchup results.")
+            confirm_clear_draft = st.checkbox("I understand this clears draft results, matchup data, and the saved draft order.")
             clear_draft_submitted = st.form_submit_button(
                 "Clear draft results",
                 type="primary",
@@ -152,7 +152,7 @@ with control_cols[0]:
             else:
                 try:
                     clear_draft_results(user_id)
-                    st.success("Draft results cleared. The imported player pool and draft order are ready to use again.")
+                    st.success("Draft results and order cleared. The imported player pool is ready for a new draft order.")
                     st.rerun()
                 except ValueError as exc:
                     st.error(str(exc))

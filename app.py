@@ -30,7 +30,8 @@ def league_page():
         render_demo_league()
         return
 
-    from auth import login_form, register_form, logout_button
+    from auth import login_form, register_form, logout_button, restore_login_from_cookie
+    restore_login_from_cookie()
     from draft import get_settings
     from scoring_rules import render_scoring_rules
 

@@ -212,6 +212,7 @@ def get_order() -> list[dict]:
             FROM draft_order d
             JOIN users u ON u.id = d.user_id
             LEFT JOIN fantasy_teams ft ON ft.user_id = u.id
+            WHERE u.is_active = 1 AND u.is_approved = 1
             ORDER BY d.position
         """)]
 

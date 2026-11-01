@@ -68,7 +68,7 @@ draft_page_presence_heartbeat()
 
 @st.fragment(run_every="1s")
 def upcoming_picks_panel():
-    upcoming_picks = get_upcoming_picks(4)
+    upcoming_picks = get_upcoming_picks(6)
     active_users = get_active_draft_page_user_ids()
     if upcoming_picks:
         with st.container(border=True):
@@ -83,9 +83,7 @@ def upcoming_picks_panel():
                         st.markdown("## 🛡️")
                     status_dot = "🟢" if int(pick["user_id"]) in active_users else "🔴"
                     team_name = pick.get("team_name") or f"{pick['display_name']} Team"
-                    name_col, status_col = st.columns([6, 1], gap="small", vertical_alignment="center")
-                    name_col.markdown(f"**{team_name}**")
-                    status_col.markdown(status_dot)
+                    st.markdown(f"**{team_name}** {status_dot}")
                     st.caption(pick["display_name"])
 
 
