@@ -12,6 +12,17 @@ def load_scoring_rules() -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def player_game_points(stats: dict, rules: dict) -> float:
+    """Score one player's game, including at most one kill/assist threshold bonus."""
+    player_rules = rules.get("player", {})
+    points = sum(float(stats.get(key, 0) or 0) * float(weight) for key, weight in player_rules.items())
+    bonus = rules.get("player_bonus", {})
+    threshold = float(bonus.get("kill_or_assist_threshold", 10))
+    if float(stats.get("kills", 0) or 0) >= threshold or float(stats.get("assists", 0) or 0) >= threshold:
+        points += float(bonus.get("points", 2))
+    return round(points, 2)
+
+
 def render_scoring_rules() -> None:
     rules = load_scoring_rules()
     player = rules["player"]
@@ -24,7 +35,8 @@ def render_scoring_rules() -> None:
                 f"- Kill: **{player['kills']:+g}**\n"
                 f"- Death: **{player['deaths']:+g}**\n"
                 f"- Assist: **{player['assists']:+g}**\n"
-                f"- Creep score: **{player['creepScore']:+g} per CS**"
+                f"- Creep score: **{player['creepScore']:+g} per CS**\n"
+                f"- 10+ kills or 10+ assists: **+{rules['player_bonus']['points']:g} points once per game**"
             )
         with org_col:
             st.markdown("#### Org slot")

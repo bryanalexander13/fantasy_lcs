@@ -11,6 +11,7 @@ from pathlib import Path
 import streamlit as st
 
 from utils.lcs_api_wrapper import LoLEsportsAPI
+from scoring_rules import player_game_points
 
 
 SAMPLE_PATH = Path(__file__).resolve().parent / "sample_data" / "lcs_summer_2026.json"
@@ -278,11 +279,14 @@ def _build_demo_data_cached(season_data, seed, scoring):
                             "opponent": ", ".join(opponents),
                             "champion": game_stats.get("champion", ""),
                             **raw_game,
-                            "fantasy_points": round(_score(raw_game, scoring["player"]), 2),
+                            "fantasy_points": player_game_points(raw_game, scoring),
                         })
                     raw = {key: int(stats.get(key, 0)) for key in ("kills", "deaths", "assists", "creepScore")}
-                    total_points = _score(raw, scoring["player"])
                     games_played = len(series_games) or int(stats.get("games", 0))
+                    total_points = (
+                        sum(line["fantasy_points"] for line in game_lines)
+                        if game_lines else _score(raw, scoring["player"])
+                    )
                     points = total_points / games_played if games_played else 0.0
                     total += points
                     player_lines.append({
@@ -418,8 +422,13 @@ def build_spring_split_draft_scores():
     """Return cumulative Spring split fantasy points for players and orgs."""
     season_data = _regular_season_data(load_spring_2026_data())
     scoring = json.loads(Path(__file__).resolve().with_name("scoring.json").read_text(encoding="utf-8"))
+    bonus_counts = _player_bonus_game_counts(season_data, scoring.get("player_bonus", {}))
     player_points = {
-        str(player["player_id"]): _score(player, scoring["player"])
+        str(player["player_id"]): round(
+            _score(player, scoring["player"])
+            + bonus_counts.get(str(player["player_id"]), 0) * float(scoring.get("player_bonus", {}).get("points", 0)),
+            2,
+        )
         for player in season_data.get("players", [])
     }
     team_points = {
@@ -429,15 +438,38 @@ def build_spring_split_draft_scores():
     return {"players": player_points, "teams": team_points}
 
 
+def build_summer_split_draft_pool_stats():
+    """Return individual player and org stats with fantasy points from Summer 2026."""
+    season_data = load_summer_2026_data()
+    scoring = json.loads(Path(__file__).resolve().with_name("scoring.json").read_text(encoding="utf-8"))
+    return _cached_summer_split_draft_pool_stats(season_data, scoring)
+
+
+@st.cache_data(show_spinner=False, max_entries=2)
+def _cached_summer_split_draft_pool_stats(season_data, scoring):
+    player_data = _cached_player_score_totals(season_data, scoring)
+    regular_season = _regular_season_data(season_data)
+    players = {str(row["player_id"]): row for row in player_data["players"]}
+    teams = {}
+    for team in regular_season.get("teams", []):
+        team_id = str(team["team_id"])
+        teams[team_id] = {
+            **team,
+            "fantasy_points": round(_score(team, scoring["team"]), 2),
+        }
+    return {"players": players, "teams": teams}
+
+
 def build_season_player_stats(season_data):
     scoring_path = Path(__file__).resolve().with_name("scoring.json")
-    scoring = json.loads(scoring_path.read_text(encoding="utf-8"))["player"]
+    scoring = json.loads(scoring_path.read_text(encoding="utf-8"))
     return _cached_player_score_totals(season_data, scoring)
 
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def _cached_player_score_totals(season_data, scoring):
     players = []
+    bonus_counts = _player_bonus_game_counts(season_data, scoring.get("player_bonus", {}))
     for stats in season_data.get("players", []):
         if stats.get("role") not in ROLES:
             continue
@@ -454,7 +486,25 @@ def _cached_player_score_totals(season_data, scoring):
             "totalGoldEarned": int(stats.get("totalGoldEarned", 0)),
             "wardsPlaced": int(stats.get("wardsPlaced", 0)),
             "wardsDestroyed": int(stats.get("wardsDestroyed", 0)),
-            "fantasy_points": round(_score(stats, scoring), 2),
+            "fantasy_points": round(
+                _score(stats, scoring["player"])
+                + bonus_counts.get(str(stats["player_id"]), 0) * float(scoring.get("player_bonus", {}).get("points", 0)),
+                2,
+            ),
         })
     players.sort(key=lambda player: (-player["fantasy_points"], player["player_name"].casefold()))
     return {"season": season_data.get("season", "LCS Summer 2026"), "players": players}
+
+
+def _player_bonus_game_counts(season_data, bonus_rules):
+    """Count qualifying games by player ID from archived per-game records."""
+    threshold = float(bonus_rules.get("kill_or_assist_threshold", 10))
+    counts = {}
+    for week in season_data.get("weeks", []):
+        for game in week.get("game_details", []):
+            for player_id, stats in (game.get("players") or {}).items():
+                if (float(stats.get("kills", 0) or 0) >= threshold
+                        or float(stats.get("assists", 0) or 0) >= threshold):
+                    key = str(player_id)
+                    counts[key] = counts.get(key, 0) + 1
+    return counts

@@ -320,7 +320,57 @@ def get_pool() -> list[dict]:
             LEFT JOIN users d ON d.id = k.user_id
             ORDER BY p.role, p.player_name COLLATE NOCASE
         """).fetchall()
-        return [dict(row) for row in rows]
+        pool = [dict(row) for row in rows]
+
+    orgs = [player for player in pool if player["role"] == "team"]
+    missing_logos = [player for player in orgs if not player.get("image_url")]
+    if missing_logos:
+        settings = get_settings()
+        if settings.get("league_id"):
+            from league_data import fetch_league_org_logos
+
+            try:
+                logos = fetch_league_org_logos(
+                    str(settings["league_id"]),
+                    str(settings["league_name"]),
+                    str(settings["region"]),
+                )
+            except ValueError:
+                logos = {}
+
+            for player in missing_logos:
+                player["image_url"] = (
+                    logos.get(str(player.get("team_code") or "").casefold())
+                    or logos.get(str(player.get("team_name") or player["player_name"]).casefold())
+                    or logos.get(str(player["player_name"]).casefold())
+                    or ""
+                )
+
+            updates = [
+                (player["image_url"], player["player_id"])
+                for player in missing_logos if player["image_url"]
+            ]
+            if updates:
+                with connect() as db:
+                    db.executemany(
+                        "UPDATE player_pool SET image_url = ? WHERE player_id = ? AND COALESCE(image_url, '') = ''",
+                        updates,
+                    )
+
+    # Upgrade already-saved organization URLs to HTTPS for mixed-content-safe rendering.
+    insecure_orgs = [
+        player for player in orgs
+        if str(player.get("image_url") or "").lower().startswith("http://")
+    ]
+    for player in insecure_orgs:
+        player["image_url"] = "https://" + player["image_url"][len("http://"):]
+    if insecure_orgs:
+        with connect() as db:
+            db.executemany(
+                "UPDATE player_pool SET image_url = ? WHERE player_id = ?",
+                [(player["image_url"], player["player_id"]) for player in insecure_orgs],
+            )
+    return pool
 
 
 def get_available_players(slot: str) -> list[dict]:
@@ -337,6 +387,8 @@ def get_available_players(slot: str) -> list[dict]:
 
 
 def get_user_picks(user_id: int) -> list[dict]:
+    # Fill missing org logos and upgrade legacy HTTP org URLs before reading picks.
+    get_pool()
     with connect() as db:
         rows = db.execute("""
             SELECT k.overall_pick, k.round, k.pick_in_round, k.roster_slot,

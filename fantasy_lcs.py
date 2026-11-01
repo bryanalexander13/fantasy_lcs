@@ -140,6 +140,13 @@ class Player:
                 score_type = 'player'
             for stat_name in scoring_dict[score_type].keys():
                 score += self.player_stats[week][game_id][stat_name] * scoring_dict[score_type][stat_name]
+            if score_type == 'player':
+                bonus = scoring_dict.get('player_bonus', {})
+                threshold = float(bonus.get('kill_or_assist_threshold', 10))
+                stats = self.player_stats[week][game_id]
+                if (float(stats.get('kills', 0) or 0) >= threshold
+                        or float(stats.get('assists', 0) or 0) >= threshold):
+                    score += float(bonus.get('points', 0))
             self.player_score[week][game_id] = round(score, 2)
         self.save()
 

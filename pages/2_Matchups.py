@@ -10,7 +10,7 @@ if is_demo_mode():
 from auth import logout_button, require_login
 from storage import get_fantasy_matchup_schedule, get_matchup_weeks, get_matchups, get_weekly_dragon_bonus
 from draft import get_settings
-from scoring_rules import render_weekly_dragon_bonus
+from scoring_rules import player_game_points, render_weekly_dragon_bonus
 from live_matches import get_live_matches, refresh_live_matches
 from utils.lcs_api_wrapper import LoLEsportsAPI, LoLEsportsAPIError
 from utils.champion_assets import champion_asset
@@ -98,8 +98,7 @@ def _render_player_side(team_name: str, team_metadata: dict, team_stats: dict,
         deaths = float(stats.get("deaths") or 0)
         assists = float(stats.get("assists") or 0)
         creep_score = float(stats.get("creepScore") or 0)
-        points = sum(float(stats.get(key) or 0) * float(weight)
-                     for key, weight in scoring_rules["player"].items())
+        points = player_game_points(stats, scoring_rules)
         role = roles.get(str(participant.get("role") or "").casefold(), "")
         player_name = participant.get("summonerName") or "Unknown player"
         champion_name = participant.get("championId") or participant.get("championName")

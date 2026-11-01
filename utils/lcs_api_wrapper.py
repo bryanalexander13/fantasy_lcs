@@ -61,6 +61,12 @@ def _canonical_role(raw_role):
     }
     return aliases.get(role, "flex")
 
+
+def _secure_image_url(value):
+    """Use HTTPS for API image URLs so browsers don't block them on the app's HTTPS page."""
+    url = str(value or "").strip()
+    return "https://" + url[len("http://"):] if url.lower().startswith("http://") else url
+
 def dict_lookup(dict_list, key, value):
     return list(filter(lambda x: x[key] == value, dict_list))
 
@@ -162,7 +168,7 @@ class LoLEsportsAPI:
             params['id'] = team_slug
         return self._get_json(URL, params=params)
 
-    def get_players_for_league(self, league, hl='en-US'):
+    def get_players_for_league(self, league, hl='en-US', include_player_images=True):
         """Return current-season orgs and player rosters for one regional league.
 
         The API exposes team rosters by team slug, so this follows the league's
@@ -228,7 +234,7 @@ class LoLEsportsAPI:
                 'team_code': team_code,
                 'league_name': league_name,
                 'region': region,
-                'image_url': str(team.get('image') or team.get('alternativeImage') or '').strip(),
+                'image_url': _secure_image_url(team.get('image') or team.get('alternativeImage')),
             }
             for player in team.get('players', []):
                 player_id = str(player.get('id', '')).strip()
@@ -245,19 +251,20 @@ class LoLEsportsAPI:
                     'region': region,
                     'image_url': str(player.get('image') or player.get('photoUrl') or '').strip(),
                 }
-        players_without_images = [
-            player for player in pool.values()
-            if player['role'] != 'team' and not player['image_url']
-        ]
-        images = find_player_images(
-            [player['player_name'] for player in players_without_images],
-            {
-                player['player_name']: [player['team_name'], player.get('team_code', '')]
-                for player in players_without_images
-            },
-        )
-        for player in players_without_images:
-            player['image_url'] = images.get(player['player_name'], '')
+        if include_player_images:
+            players_without_images = [
+                player for player in pool.values()
+                if player['role'] != 'team' and not player['image_url']
+            ]
+            images = find_player_images(
+                [player['player_name'] for player in players_without_images],
+                {
+                    player['player_name']: [player['team_name'], player.get('team_code', '')]
+                    for player in players_without_images
+                },
+            )
+            for player in players_without_images:
+                player['image_url'] = images.get(player['player_name'], '')
         if not pool:
             raise ValueError("No team or player roster records were returned for this league.")
         return list(pool.values())

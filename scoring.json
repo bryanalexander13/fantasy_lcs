@@ -6,6 +6,11 @@
       "assists": 0.5,
       "creepScore": 0.01
     },
+  "player_bonus":
+    {
+      "kill_or_assist_threshold": 10,
+      "points": 2
+    },
   "team":
     {
       "towers": 1,

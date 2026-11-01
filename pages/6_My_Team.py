@@ -10,7 +10,7 @@ from storage import (
     rename_fantasy_team,
     save_fantasy_team_image,
 )
-from utils.player_images import render_player_image
+from utils.player_images import render_org_logo, render_player_image
 from utils.team_images import normalize_team_image
 
 
@@ -97,7 +97,11 @@ else:
                         if pick.get("team_name"):
                             st.caption(pick["team_name"])
                 else:
-                    st.write(f"**{pick['player_name']}**")
+                    org_image_col, org_col = st.columns([1, 3])
+                    with org_image_col:
+                        render_org_logo(pick.get("image_url"), size=76)
+                    with org_col:
+                        st.write(f"**{pick['player_name']}**")
             else:
                 st.caption("Waiting for draft pick")
     st.caption(f"{len(picks)} of {len(SLOTS)} roster slots drafted.")

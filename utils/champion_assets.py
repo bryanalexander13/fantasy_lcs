@@ -1,6 +1,7 @@
 """Resolve LoL champion identifiers to Riot Data Dragon icons."""
 
 import re
+import random
 
 import requests
 import streamlit as st
@@ -8,6 +9,10 @@ import streamlit as st
 
 DATA_DRAGON_VERSIONS_URL = "https://ddragon.leagueoflegends.com/api/versions.json"
 DATA_DRAGON_CDN = "https://ddragon.leagueoflegends.com/cdn"
+CHAMPION_PICK_AUDIO_BASE = (
+    "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/"
+    "global/default/v1/champion-choose-vo"
+)
 
 
 def _normalize(value: str) -> str:
@@ -64,3 +69,24 @@ def champion_names() -> list[str]:
         {str(champion.get("name") or "").strip() for champion in catalog.values() if champion.get("name")},
         key=str.casefold,
     )
+
+
+def random_champion_pick_quote() -> dict[str, str] | None:
+    """Choose a random champion's hosted pick voice clip from CommunityDragon."""
+    try:
+        _, catalog = _champion_catalog()
+    except (requests.RequestException, ValueError, TypeError):
+        return None
+
+    champions = [
+        (str(champion.get("name") or "").strip(), str(champion.get("key") or "").strip())
+        for champion in catalog.values()
+        if champion.get("name") and str(champion.get("key") or "").isdigit()
+    ]
+    if not champions:
+        return None
+    name, champion_key = random.choice(champions)
+    return {
+        "name": name,
+        "url": f"{CHAMPION_PICK_AUDIO_BASE}/{champion_key}.ogg",
+    }
