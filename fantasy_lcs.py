@@ -560,9 +560,9 @@ class Match:
 # test_scoring_dict = {
 #   "player":
 #     {
-#       "kills": 1,
+#       "kills": 2,
 #       "deaths": -1,
-#       "assists": 0.5,
+#       "assists": 1.5,
 #       "creepScore": 0.01
 #     },
 #   "team":

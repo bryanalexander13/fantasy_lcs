@@ -6,8 +6,13 @@ from pathlib import Path
 import streamlit as st
 
 
-@st.cache_data
 def load_scoring_rules() -> dict:
+    path = Path(__file__).resolve().with_name("scoring.json")
+    return _load_scoring_rules(path.stat().st_mtime_ns)
+
+
+@st.cache_data
+def _load_scoring_rules(modified_at: int) -> dict:
     path = Path(__file__).resolve().with_name("scoring.json")
     return json.loads(path.read_text(encoding="utf-8"))
 

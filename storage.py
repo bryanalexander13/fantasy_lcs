@@ -393,6 +393,59 @@ def is_commissioner(user_id: int) -> bool:
                     and (row["role"] == "commissioner" or row["is_admin"]))
 
 
+def clear_draft_results(commissioner_id: int) -> None:
+    """Clear draft picks and generated league results while keeping the pool and locked order."""
+    if not is_commissioner(commissioner_id):
+        raise ValueError("Only the commissioner can clear draft results.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        settings = db.execute("SELECT status FROM draft_settings WHERE id = 1").fetchone()
+        if not settings:
+            raise ValueError("Draft settings are unavailable.")
+        if settings["status"] == "in_progress":
+            raise ValueError("The draft must be completed or in setup before its results can be cleared.")
+        db.execute("DELETE FROM trade_proposals")
+        db.execute("DELETE FROM roster_exchanges")
+        db.execute("DELETE FROM draft_picks")
+        db.execute("DELETE FROM fantasy_matchup_schedule")
+        db.execute("DELETE FROM weekly_dragon_bonus")
+        db.execute("DELETE FROM matchup_champion_choices")
+        db.execute("""UPDATE draft_settings SET status = 'setup', turn_started_at = NULL,
+            started_at = NULL, completed_at = NULL WHERE id = 1""")
+
+
+def reset_league_information(commissioner_id: int) -> None:
+    """Reset league setup and results while preserving user logins and API match history."""
+    if not is_commissioner(commissioner_id):
+        raise ValueError("Only the commissioner can reset league information.")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        settings = db.execute("SELECT status FROM draft_settings WHERE id = 1").fetchone()
+        if not settings:
+            raise ValueError("Draft settings are unavailable.")
+        if settings["status"] == "in_progress":
+            raise ValueError("The league cannot be reset while a draft is in progress.")
+        db.execute("DELETE FROM trade_proposals")
+        db.execute("DELETE FROM roster_exchanges")
+        db.execute("DELETE FROM draft_picks")
+        db.execute("DELETE FROM draft_order")
+        db.execute("DELETE FROM fantasy_matchup_schedule")
+        db.execute("DELETE FROM weekly_dragon_bonus")
+        db.execute("DELETE FROM matchup_champion_choices")
+        db.execute("DELETE FROM roster_slots")
+        db.execute("DELETE FROM matchups")
+        db.execute("DELETE FROM league_teams")
+        db.execute("DELETE FROM player_pool")
+        db.execute("""UPDATE fantasy_teams
+            SET team_name = COALESCE((SELECT NULLIF(users.display_name, '') FROM users
+                                      WHERE users.id = fantasy_teams.user_id), 'My Fantasy Team') || ' Team',
+                team_image = NULL, team_image_mime = ''""")
+        db.execute("""UPDATE draft_settings SET status = 'setup', league_name = 'LCS',
+            league_id = '', region = 'North America', scheduled_at = NULL,
+            turn_started_at = NULL, started_at = NULL, completed_at = NULL,
+            draft_order_locked = 0 WHERE id = 1""")
+
+
 def get_matchup_weeks() -> list[str]:
     with connect() as db:
         return [r[0] for r in db.execute(

@@ -73,8 +73,6 @@ def upcoming_picks_panel():
                     st.caption(pick["display_name"])
 
 
-upcoming_picks_panel()
-
 if commissioner and settings["status"] == "setup":
     with st.expander("Commissioner controls", expanded=True):
         st.subheader("Draft date and time")
@@ -196,6 +194,9 @@ elif users:
     st.info("The commissioner has not randomized the draft order yet.")
 else:
     st.info("The draft order will appear here after league members create accounts and the commissioner randomizes it.")
+
+if settings["status"] == "in_progress":
+    upcoming_picks_panel()
 
 if settings["status"] == "setup":
     st.subheader("Draft room")
@@ -493,28 +494,27 @@ sound_enabled = st.toggle(
 @st.fragment(run_every="1s")
 def draft_pick_sound_watcher():
     picks_so_far = get_picks()
-    manual_picks = [pick for pick in picks_so_far if not pick["is_auto_pick"]]
-    latest_manual_pick = max(
-        (int(pick["overall_pick"]) for pick in manual_picks),
+    latest_pick = max(
+        (int(pick["overall_pick"]) for pick in picks_so_far),
         default=0,
     )
-    last_seen_pick = st.session_state.get("draft_last_manual_pick_seen")
+    last_seen_pick = st.session_state.get("draft_last_pick_sound_seen")
     if last_seen_pick is None:
-        st.session_state["draft_last_manual_pick_seen"] = latest_manual_pick
+        st.session_state["draft_last_pick_sound_seen"] = latest_pick
         return
-    if latest_manual_pick < last_seen_pick:
-        st.session_state["draft_last_manual_pick_seen"] = latest_manual_pick
+    if latest_pick < last_seen_pick:
+        st.session_state["draft_last_pick_sound_seen"] = latest_pick
         return
-    if latest_manual_pick == last_seen_pick:
+    if latest_pick == last_seen_pick:
         return
 
-    new_manual_picks = [
-        pick for pick in manual_picks
+    new_picks = [
+        pick for pick in picks_so_far
         if int(pick["overall_pick"]) > int(last_seen_pick)
     ]
-    st.session_state["draft_last_manual_pick_seen"] = latest_manual_pick
+    st.session_state["draft_last_pick_sound_seen"] = latest_pick
     if st.session_state.get("draft_audio_enabled", True):
-        for _pick in new_manual_picks:
+        for _pick in new_picks:
             st.audio(
                 PICK_CONFIRMATION_URL,
                 format="audio/ogg",

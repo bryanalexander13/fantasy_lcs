@@ -14,6 +14,8 @@ from storage import (
     get_user_accounts,
     is_commissioner,
     remove_user_account,
+    clear_draft_results,
+    reset_league_information,
 )
 from utils.lcs_api_wrapper import LoLEsportsAPIError
 
@@ -52,15 +54,16 @@ if pending_accounts:
                 st.caption("This deletes the pending account and its login.")
                 with st.form(f"remove_pending_account_form_{account['id']}"):
                     confirm_remove = st.checkbox("Confirm removal", key=f"confirm_pending_{account['id']}")
-                    remove_submitted = st.form_submit_button(
-                        "Remove account", type="primary", disabled=not confirm_remove,
-                    )
+                    remove_submitted = st.form_submit_button("Remove account", type="primary")
                 if remove_submitted:
-                    try:
-                        remove_user_account(user_id, account["id"])
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
+                    if not confirm_remove:
+                        st.error("Confirm removal before continuing.")
+                    else:
+                        try:
+                            remove_user_account(user_id, account["id"])
+                            st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
 else:
     st.caption("There are no accounts waiting for approval.")
 
@@ -84,18 +87,21 @@ for account in active_accounts:
                     confirm_remove = st.checkbox("Confirm removal", key=f"confirm_account_{account['id']}")
                     remove_submitted = st.form_submit_button(
                         "Remove account", type="primary",
-                        disabled=not confirm_remove or settings.get("status") == "in_progress",
+                        disabled=settings.get("status") == "in_progress",
                     )
                 if remove_submitted:
-                    try:
-                        result = remove_user_account(user_id, account["id"])
-                        if result == "deleted":
-                            st.success(f"Removed {account['display_name']}.")
-                        else:
-                            st.success(f"Removed {account['display_name']}'s sign-in; league history was preserved.")
-                        st.rerun()
-                    except ValueError as exc:
-                        st.error(str(exc))
+                    if not confirm_remove:
+                        st.error("Confirm removal before continuing.")
+                    else:
+                        try:
+                            result = remove_user_account(user_id, account["id"])
+                            if result == "deleted":
+                                st.success(f"Removed {account['display_name']}.")
+                            else:
+                                st.success(f"Removed {account['display_name']}'s sign-in; league history was preserved.")
+                            st.rerun()
+                        except ValueError as exc:
+                            st.error(str(exc))
 
 st.subheader("Season data")
 st.caption("Refresh the saved regular-season API data. Other league members can view the refreshed stats.")
@@ -121,6 +127,61 @@ if settings.get("scheduled_at"):
     st.metric("Draft date and time", f"{settings['scheduled_at']} (local time)")
 else:
     st.info("No draft date and time has been set yet. Set it in the Draft page commissioner controls.")
+
+st.subheader("League controls")
+control_cols = st.columns(2, gap="large")
+with control_cols[0]:
+    with st.popover("Clear draft results", width="stretch"):
+        st.caption(
+            "Removes drafted rosters, schedule, trades, and champion picks/bans, then reopens the draft. "
+            "The imported player pool and locked draft order are kept."
+        )
+        with st.form("clear_draft_results_form"):
+            confirm_clear_draft = st.checkbox("I understand this clears draft and matchup results.")
+            clear_draft_submitted = st.form_submit_button(
+                "Clear draft results",
+                type="primary",
+                disabled=settings.get("status") == "in_progress",
+                width="stretch",
+            )
+        if settings.get("status") == "in_progress":
+            st.warning("Finish or stop the active draft before clearing its results.")
+        if clear_draft_submitted:
+            if not confirm_clear_draft:
+                st.error("Confirm that you want to clear draft results before continuing.")
+            else:
+                try:
+                    clear_draft_results(user_id)
+                    st.success("Draft results cleared. The imported player pool and draft order are ready to use again.")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
+with control_cols[1]:
+    with st.popover("Reset league information", width="stretch"):
+        st.caption(
+            "Clears the player pool, draft order and results, league schedule, trades, matchup picks/bans, "
+            "and custom team names/images. Member accounts, sign-ins, saved API match history, and past-season stats remain."
+        )
+        with st.form("reset_league_information_form"):
+            reset_phrase = st.text_input("Type RESET to confirm")
+            reset_league_submitted = st.form_submit_button(
+                "Reset league information",
+                type="primary",
+                disabled=settings.get("status") == "in_progress",
+                width="stretch",
+            )
+        if settings.get("status") == "in_progress":
+            st.warning("Finish or stop the active draft before resetting the league.")
+        if reset_league_submitted:
+            if reset_phrase.strip().upper() != "RESET":
+                st.error("Type RESET to confirm the league reset.")
+            else:
+                try:
+                    reset_league_information(user_id)
+                    st.success("League information reset. Member accounts and saved API history were preserved.")
+                    st.rerun()
+                except ValueError as exc:
+                    st.error(str(exc))
 
 st.subheader("Trade proposals awaiting review")
 pending = get_trade_proposals(pending_only=True)

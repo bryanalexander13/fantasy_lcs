@@ -1,23 +1,20 @@
 {
-  "player":
-    {
-      "kills": 1,
-      "deaths": -1,
-      "assists": 0.5,
-      "creepScore": 0.01
-    },
-  "player_bonus":
-    {
-      "kill_or_assist_threshold": 10,
-      "points": 2
-    },
-  "team":
-    {
-      "towers": 1,
-      "barons": 2,
-      "dragon_count": 1,
-      "dragon_souls": 4,
-      "dragon_type_weekly_bonus": 1,
-      "elder_dragon_bonus": 4
-    }
+  "player": {
+    "kills": 2,
+    "deaths": -1,
+    "assists": 1.5,
+    "creepScore": 0.01
+  },
+  "player_bonus": {
+    "kill_or_assist_threshold": 10,
+    "points": 2
+  },
+  "team": {
+    "towers": 1,
+    "barons": 2,
+    "dragon_count": 1,
+    "dragon_souls": 4,
+    "dragon_type_weekly_bonus": 1,
+    "elder_dragon_bonus": 4
+  }
 }
