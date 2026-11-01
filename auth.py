@@ -17,7 +17,6 @@ _ITERATIONS = 310_000
 _REMEMBER_COOKIE = "fantasy_lcs_remember"
 _REMEMBER_DAYS = 30
 _COOKIE_MANAGER_STATE = "_fantasy_lcs_cookie_manager"
-_COOKIE_OPERATION_KEY = "fantasy_lcs_remember_cookie_operation"
 
 
 def _cookie_manager():
@@ -31,6 +30,11 @@ def _cookie_manager():
     return manager
 
 
+def _cookie_operation_key(token: str) -> str:
+    token_id = hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+    return f"fantasy_lcs_remember_{token_id}"
+
+
 def _delete_remember_cookie(token: str, cookie_manager=None) -> None:
     manager = cookie_manager or _cookie_manager()
     # CookieManager.delete removes the name from its local map after asking the
@@ -38,14 +42,21 @@ def _delete_remember_cookie(token: str, cookie_manager=None) -> None:
     if manager.cookies is None:
         manager.cookies = {}
     manager.cookies[_REMEMBER_COOKIE] = token
-    manager.delete(_REMEMBER_COOKIE, key=_COOKIE_OPERATION_KEY)
+    manager.delete(_REMEMBER_COOKIE, key=_cookie_operation_key(token))
 
 
-def _request_remember_cookie() -> str | None:
+def _request_remember_cookie(cookie_manager=None) -> str | None:
     try:
         value = st.context.cookies.get(_REMEMBER_COOKIE)
     except Exception:
-        return None
+        value = None
+    if value:
+        return str(value)
+
+    manager = cookie_manager or _cookie_manager()
+    cookies = manager.get_all(key="fantasy_lcs_remember_cookie_reader") or {}
+    manager.cookies = cookies
+    value = cookies.get(_REMEMBER_COOKIE)
     return str(value) if value else None
 
 
@@ -65,7 +76,7 @@ def _establish_login(user_id: int, display_name: str, keep_signed_in: bool, cook
         cookie_manager.set(
             _REMEMBER_COOKIE,
             token,
-            key=_COOKIE_OPERATION_KEY,
+            key=_cookie_operation_key(token),
             path="/",
             expires_at=expires_at,
             secure=_cookie_is_secure(),
@@ -130,7 +141,9 @@ def login_form() -> None:
                 st.info("Your account is waiting for commissioner approval.")
                 return
             _establish_login(user["id"], user["display_name"], keep_signed_in, cookie_manager)
-            st.rerun()
+            if not keep_signed_in:
+                st.rerun()
+            return
         st.error("Username or password is incorrect.")
 
 
@@ -163,7 +176,9 @@ def register_form() -> None:
     account = get_user_access(user_id)
     if account and account["is_approved"] and account["is_active"]:
         _establish_login(user_id, display_name, keep_signed_in, cookie_manager)
-        st.rerun()
+        if not keep_signed_in:
+            st.rerun()
+        return
     st.success("Account request submitted.")
     st.info("You can log in after the commissioner approves your account.")
 
