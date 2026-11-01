@@ -83,7 +83,9 @@ def upcoming_picks_panel():
                         st.markdown("## 🛡️")
                     status_dot = "🟢" if int(pick["user_id"]) in active_users else "🔴"
                     team_name = pick.get("team_name") or f"{pick['display_name']} Team"
-                    st.markdown(f"{status_dot} **{team_name}**")
+                    name_col, status_col = st.columns([6, 1], gap="small", vertical_alignment="center")
+                    name_col.markdown(f"**{team_name}**")
+                    status_col.markdown(status_dot)
                     st.caption(pick["display_name"])
 
 
