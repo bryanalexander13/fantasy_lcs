@@ -17,6 +17,7 @@ from storage import (
     clear_draft_results,
     reset_league_information,
 )
+from league_scoring import refresh_fantasy_matchup_points
 from utils.lcs_api_wrapper import LoLEsportsAPIError
 
 user_id = require_login()
@@ -103,19 +104,47 @@ for account in active_accounts:
                         except ValueError as exc:
                             st.error(str(exc))
 
-st.subheader("Season data")
-st.caption("Refresh the saved regular-season API data. Other league members can view the refreshed stats.")
-summer_col, spring_col = st.columns(2)
-with summer_col:
-    if st.button("Load Summer 2026 data from API", key="load_summer_api"):
+st.subheader("Current split")
+st.caption(
+    "The current split is Summer 2026. Refresh its regular-season API data as matches finish, "
+    "then refresh fantasy points to apply the current scoring rules to matchup results and records."
+)
+data_col, points_col = st.columns(2, gap="large")
+with data_col:
+    if st.button("Refresh current split data", key="refresh_current_split", icon=":material/refresh:"):
+        progress = st.progress(0, text="Connecting to the LoL Esports API…")
+
+        def report_progress(current, total, block):
+            fraction = current / total if total else 0
+            progress.progress(fraction, text=f"Loading {block or 'current split'} · {current} of {total} matches")
+
         try:
-            with st.spinner("Loading Summer 2026 data from the LoL Esports API…"):
-                data = load_summer_2026_data(refresh=True)
-            st.success(f"Saved {data.get('games_loaded', 0)} Summer 2026 games.")
+            data = load_summer_2026_data(refresh=True, progress_callback=report_progress)
+            progress.empty()
+            st.success(
+                f"Refreshed {data.get('games_loaded', 0)} Summer 2026 games "
+                f"({data.get('pulled_at', 'pull time unavailable')})."
+            )
         except (LoLEsportsAPIError, OSError, ValueError) as exc:
-            st.error(f"Couldn't load Summer 2026 data: {exc}")
-with spring_col:
-    if st.button("Load Spring 2026 data from API", key="load_spring_api"):
+            progress.empty()
+            st.error(f"Couldn't refresh the current split: {exc}")
+with points_col:
+    if st.button("Refresh points and matchup records", key="refresh_matchup_points", type="primary",
+                 icon=":material/calculate:"):
+        try:
+            with st.spinner("Recalculating scheduled matchups using the current scoring rules…"):
+                snapshot = load_summer_2026_data()
+                summary = refresh_fantasy_matchup_points(user_id, snapshot)
+            st.success(
+                f"Updated {summary['matchups']} matchup results across {summary['weeks']} weeks "
+                f"using {summary['split']} and the current scoring rules."
+            )
+        except (LoLEsportsAPIError, OSError, ValueError, KeyError) as exc:
+            st.error(f"Couldn't refresh matchup points: {exc}")
+st.caption("Run the point refresh again after changing scoring.json or refreshing split data.")
+
+with st.expander("Past split data"):
+    if st.button("Refresh Spring 2026 data from API", key="load_spring_api"):
         try:
             with st.spinner("Loading Spring 2026 data from the LoL Esports API…"):
                 data = load_spring_2026_data(refresh=True)
@@ -226,7 +255,7 @@ if history:
         "Proposer": trade["proposer_name"], "Recipient": trade["recipient_name"],
         "Offer": trade["offered_player_name"], "Requested": trade["requested_player_name"],
         "Status": trade["status"].title(), "Updated": trade["resolved_at"] or trade["created_at"],
-    } for trade in history[:20]], hide_index=True, use_container_width=True)
+    } for trade in history[:20]], hide_index=True)
 else:
     st.caption("No completed trade decisions yet.")
 

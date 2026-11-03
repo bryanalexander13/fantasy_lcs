@@ -29,7 +29,7 @@ name_width = min(max(len(profile["team_name"]) * 0.26, 0.8), 12)
 title_col, edit_col, _ = st.columns([name_width, 0.5, 10])
 title_col.title(profile["team_name"])
 with edit_col:
-    with st.popover("✏️", help="Edit team name"):
+    with st.popover("✏️", help="Edit team name", width="content"):
         with st.form("rename_team_form"):
             new_team_name = st.text_input("Team name", value=profile["team_name"], max_chars=50)
             rename_submitted = st.form_submit_button("Save team name", type="primary")
@@ -52,7 +52,7 @@ with image_col:
     else:
         preview_col.caption("No image")
     with controls_col:
-        with st.popover("✏️", help="Edit team image", use_container_width=True):
+        with st.popover("✏️", help="Edit team image", width="content"):
             st.caption("Upload a PNG, JPG, or WebP image.")
             with st.form("team_image_upload_form"):
                 uploaded = st.file_uploader(
@@ -60,7 +60,7 @@ with image_col:
                 )
                 save_image = st.form_submit_button("Save image", type="primary")
         if profile.get("team_image") and st.button(
-            "🗑️", help="Remove team image", key="remove_team_image", use_container_width=True
+            "🗑️", help="Remove team image", key="remove_team_image", width="content"
         ):
             clear_fantasy_team_image(user_id)
             st.rerun()

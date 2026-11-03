@@ -30,10 +30,43 @@ if generated_schedule:
         "Matchup": row["matchup_number"],
         "Team 1": row["team_1_name"],
         "Owner 1": row["team_1_owner"],
+        "Score 1": f"{row['team_1_score']:.2f}" if row.get("team_1_score") is not None else "—",
         "Team 2": row["team_2_name"] or "Bye",
         "Owner 2": row["team_2_owner"] or "—",
+        "Score 2": f"{row['team_2_score']:.2f}" if row.get("team_2_score") is not None else "—",
+        "Result": (
+            "Tie" if row.get("winner_user_id") is None and row.get("team_1_score") is not None
+            and row.get("team_2_score") is not None
+            else "Team 1 win" if row.get("winner_user_id") == row.get("team_1_user_id")
+            else "Team 2 win" if row.get("winner_user_id") == row.get("team_2_user_id")
+            else "Pending"
+        ),
     } for row in generated_schedule if row["week_number"] == selected_schedule_week],
-        hide_index=True, use_container_width=True)
+        hide_index=True)
+    scored_week = [row for row in generated_schedule
+                   if row["week_number"] == selected_schedule_week and row.get("split_name")]
+    if scored_week:
+        st.caption(
+            f"Scores are based on {scored_week[0]['split_name']} data and the current scoring rules "
+            f"(updated {scored_week[0].get('score_updated_at') or 'recently'} UTC)."
+        )
+        for row in scored_week:
+            if row.get("team_1_score") is None:
+                continue
+            with st.expander(f"View matchup {row['matchup_number']} box score"):
+                left_col, right_col = st.columns(2, gap="large")
+                for column, name, breakdown in (
+                    (left_col, row["team_1_name"], row.get("team_1_breakdown_json", "[]")),
+                    (right_col, row["team_2_name"] or "Bye", row.get("team_2_breakdown_json", "[]")),
+                ):
+                    with column:
+                        st.markdown(f"**{name}**")
+                        try:
+                            lines = json.loads(breakdown or "[]")
+                        except (TypeError, ValueError):
+                            lines = []
+                        if lines:
+                            st.dataframe(lines, hide_index=True)
 else:
     st.caption("No generated league schedule yet. The legacy sample schedule is shown until the draft completes.")
     weeks = get_matchup_weeks()
@@ -52,7 +85,7 @@ else:
                 "Team 2": m["team_2"] or "TBD",
                 "Owner 2": m["owner_2"] or "—",
                 "Score 2": "—",
-            } for i, m in enumerate(matchups)], hide_index=True, use_container_width=True)
+            } for i, m in enumerate(matchups)], hide_index=True)
         else:
             st.info("There are no matchups for this week.")
 st.caption("The live panel below reads current match and game feeds from the LoL Esports API.")

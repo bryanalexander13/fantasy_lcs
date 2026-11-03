@@ -88,6 +88,20 @@ def initialize_database() -> None:
                 PRIMARY KEY(week_number, matchup_number),
                 CHECK(team_2_user_id IS NULL OR team_1_user_id <> team_2_user_id)
             );
+            CREATE TABLE IF NOT EXISTS fantasy_matchup_results (
+                week_number INTEGER NOT NULL,
+                matchup_number INTEGER NOT NULL,
+                split_name TEXT NOT NULL,
+                team_1_score REAL NOT NULL,
+                team_2_score REAL,
+                team_1_breakdown_json TEXT NOT NULL,
+                team_2_breakdown_json TEXT NOT NULL,
+                winner_user_id INTEGER REFERENCES users(id),
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY(week_number, matchup_number),
+                FOREIGN KEY(week_number, matchup_number)
+                    REFERENCES fantasy_matchup_schedule(week_number, matchup_number) ON DELETE CASCADE
+            );
             CREATE TABLE IF NOT EXISTS weekly_dragon_bonus (
                 week_number INTEGER PRIMARY KEY CHECK(week_number > 0),
                 dragon_type TEXT NOT NULL,
@@ -498,6 +512,7 @@ def clear_draft_results(commissioner_id: int) -> None:
         db.execute("DELETE FROM draft_picks")
         db.execute("DELETE FROM draft_order")
         db.execute("DELETE FROM fantasy_matchup_schedule")
+        db.execute("DELETE FROM fantasy_matchup_results")
         db.execute("DELETE FROM weekly_dragon_bonus")
         db.execute("DELETE FROM matchup_champion_choices")
         db.execute("""UPDATE draft_settings SET status = 'setup', draft_order_locked = 0,
@@ -520,6 +535,7 @@ def reset_league_information(commissioner_id: int) -> None:
         db.execute("DELETE FROM draft_picks")
         db.execute("DELETE FROM draft_order")
         db.execute("DELETE FROM fantasy_matchup_schedule")
+        db.execute("DELETE FROM fantasy_matchup_results")
         db.execute("DELETE FROM weekly_dragon_bonus")
         db.execute("DELETE FROM matchup_champion_choices")
         db.execute("DELETE FROM roster_slots")
@@ -592,12 +608,17 @@ def get_fantasy_matchup_schedule(week_number: int | None = None) -> list[dict]:
                    s.team_2_user_id, two.display_name AS team_2_owner,
                    CASE WHEN two.id IS NULL THEN ''
                         ELSE COALESCE(two_team.team_name, two.display_name || ' Team') END AS team_2_name,
-                   two_team.team_image AS team_2_image
+                   two_team.team_image AS team_2_image,
+                   result.split_name, result.team_1_score, result.team_2_score,
+                   result.team_1_breakdown_json, result.team_2_breakdown_json,
+                   result.winner_user_id, result.updated_at AS score_updated_at
             FROM fantasy_matchup_schedule s
             JOIN users one ON one.id = s.team_1_user_id
             LEFT JOIN fantasy_teams one_team ON one_team.user_id = one.id
             LEFT JOIN users two ON two.id = s.team_2_user_id
             LEFT JOIN fantasy_teams two_team ON two_team.user_id = two.id
+            LEFT JOIN fantasy_matchup_results result
+                ON result.week_number = s.week_number AND result.matchup_number = s.matchup_number
             {where}
             ORDER BY s.week_number, s.matchup_number
         """, params).fetchall()
@@ -614,16 +635,104 @@ def get_user_fantasy_matchup_schedule(user_id: int) -> list[dict]:
                    COALESCE(one_team.team_name, one.display_name || ' Team') AS team_1_name,
                    s.team_2_user_id, two.display_name AS team_2_owner,
                    CASE WHEN two.id IS NULL THEN ''
-                        ELSE COALESCE(two_team.team_name, two.display_name || ' Team') END AS team_2_name
+                        ELSE COALESCE(two_team.team_name, two.display_name || ' Team') END AS team_2_name,
+                   result.split_name, result.team_1_score, result.team_2_score,
+                   result.team_1_breakdown_json, result.team_2_breakdown_json,
+                   result.winner_user_id, result.updated_at AS score_updated_at
             FROM fantasy_matchup_schedule s
             JOIN users one ON one.id = s.team_1_user_id
             LEFT JOIN fantasy_teams one_team ON one_team.user_id = one.id
             LEFT JOIN users two ON two.id = s.team_2_user_id
             LEFT JOIN fantasy_teams two_team ON two_team.user_id = two.id
+            LEFT JOIN fantasy_matchup_results result
+                ON result.week_number = s.week_number AND result.matchup_number = s.matchup_number
             WHERE s.team_1_user_id = ? OR s.team_2_user_id = ?
             ORDER BY s.week_number, s.matchup_number
         """, (int(user_id), int(user_id))).fetchall()
         return [dict(row) for row in rows]
+
+
+def get_fantasy_roster_assignments() -> list[dict]:
+    """Return drafted roster slots with the API player IDs used for scoring."""
+    with connect() as db:
+        rows = db.execute("""
+            SELECT k.user_id, k.roster_slot, p.player_id, p.player_name,
+                   p.role, p.team_name, p.team_code
+            FROM draft_picks k
+            JOIN player_pool p ON p.player_id = k.player_id
+            ORDER BY k.user_id, k.roster_slot
+        """).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_matchup_champion_choice_rows() -> list[dict]:
+    """Return saved pick/ban choices for use when recomputing fantasy points."""
+    with connect() as db:
+        _ensure_matchup_champion_choices(db)
+        rows = db.execute("""
+            SELECT week, fantasy_team_id, choice_type, role, champion_name
+            FROM matchup_champion_choices
+            ORDER BY week, fantasy_team_id, choice_type, choice_number
+        """).fetchall()
+        return [dict(row) for row in rows]
+
+
+def replace_fantasy_matchup_results(commissioner_id: int, split_name: str,
+                                    results: list[dict]) -> None:
+    """Replace saved scores for a split after recomputing with current rules."""
+    if not is_commissioner(commissioner_id):
+        raise ValueError("Only the commissioner can refresh matchup points.")
+    if not results:
+        raise ValueError("No scheduled matchups were available to score.")
+    updated_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with connect() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute("DELETE FROM fantasy_matchup_results")
+        db.executemany("""
+            INSERT INTO fantasy_matchup_results(
+                week_number, matchup_number, split_name, team_1_score, team_2_score,
+                team_1_breakdown_json, team_2_breakdown_json, winner_user_id, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, [(
+            int(row["week_number"]), int(row["matchup_number"]), str(split_name),
+            float(row["team_1_score"]),
+            None if row.get("team_2_score") is None else float(row["team_2_score"]),
+            json.dumps(row.get("team_1_breakdown", []), ensure_ascii=False),
+            json.dumps(row.get("team_2_breakdown", []), ensure_ascii=False),
+            row.get("winner_user_id"), updated_at,
+        ) for row in results])
+
+
+def get_fantasy_matchup_records() -> dict[int, dict]:
+    """Calculate cumulative W-L-D and points from the currently saved results."""
+    with connect() as db:
+        rows = db.execute("""
+            SELECT s.team_1_user_id, s.team_2_user_id,
+                   r.team_1_score, r.team_2_score, r.winner_user_id
+            FROM fantasy_matchup_schedule s
+            JOIN fantasy_matchup_results r
+              ON r.week_number = s.week_number AND r.matchup_number = s.matchup_number
+        """).fetchall()
+    records: dict[int, dict] = {}
+    for row in rows:
+        first_id = int(row["team_1_user_id"])
+        first = records.setdefault(first_id, {"wins": 0, "losses": 0, "draws": 0, "points": 0.0})
+        first["points"] += float(row["team_1_score"] or 0)
+        if row["team_2_user_id"] is None:
+            continue
+        second_id = int(row["team_2_user_id"])
+        second = records.setdefault(second_id, {"wins": 0, "losses": 0, "draws": 0, "points": 0.0})
+        second["points"] += float(row["team_2_score"] or 0)
+        if row["winner_user_id"] is None:
+            first["draws"] += 1
+            second["draws"] += 1
+        elif int(row["winner_user_id"]) == first_id:
+            first["wins"] += 1
+            second["losses"] += 1
+        else:
+            second["wins"] += 1
+            first["losses"] += 1
+    return records
 
 
 def _ensure_schedule_dragon_bonuses(db) -> None:

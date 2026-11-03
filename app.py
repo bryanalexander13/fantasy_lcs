@@ -14,7 +14,10 @@ if sys.platform == 'win32':
 
 import streamlit as st
 from demo_views import is_demo_mode, render_demo_league
-from storage import get_fantasy_team_profile, get_users, initialize_database, is_commissioner
+from storage import (
+    get_fantasy_matchup_records, get_fantasy_team_profile, get_users,
+    initialize_database, is_commissioner,
+)
 
 demo_mode = is_demo_mode()
 if not demo_mode:
@@ -32,7 +35,7 @@ def league_page():
 
     from auth import login_form, register_form, logout_button, restore_login_from_cookie
     restore_login_from_cookie()
-    from draft import get_settings
+    from draft import get_settings, get_trade_proposals
     from scoring_rules import render_scoring_rules
 
     st.title("League")
@@ -45,15 +48,16 @@ def league_page():
         settings = get_settings()
         st.subheader("Leaderboard")
         owners = get_users()
+        fantasy_records = get_fantasy_matchup_records()
         if owners:
             headers = st.columns([1, 5, 1, 1, 2])
             for column, label in zip(headers[1:], ("Team / owner", "Wins", "Losses", "Total points")):
                 column.markdown(f"**{label}**")
             leaderboard = [{
                 "owner": owner,
-                "wins": 0,
-                "losses": 0,
-                "points": 0.0,
+                "wins": fantasy_records.get(owner["id"], {}).get("wins", 0),
+                "losses": fantasy_records.get(owner["id"], {}).get("losses", 0),
+                "points": fantasy_records.get(owner["id"], {}).get("points", 0.0),
             } for owner in owners]
             leaderboard.sort(key=lambda row: (-row["wins"], -row["points"], row["owner"]["display_name"].casefold()))
             for row in leaderboard:
@@ -72,7 +76,32 @@ def league_page():
                     wins_col.write(row["wins"])
                     losses_col.write(row["losses"])
                     points_col.write(f"{row['points']:.2f}")
-            st.caption("Records will update when fantasy matchup results are connected.")
+            st.caption("Matchup records and total points reflect the latest commissioner scoring refresh.")
+
+            completed_trades = [
+                trade for trade in get_trade_proposals()
+                if trade["status"] == "approved"
+            ]
+            st.subheader("Completed trades")
+            if completed_trades:
+                role_labels = {
+                    "team": "Org", "top": "Top", "jg": "Jungle",
+                    "mid": "Mid", "adc": "Bot", "sup": "Support",
+                }
+                for trade in completed_trades:
+                    offered_role = role_labels.get(trade["offered_role"], trade["offered_role"].upper())
+                    requested_role = role_labels.get(trade["requested_role"], trade["requested_role"].upper())
+                    with st.container(border=True):
+                        st.markdown(
+                            f"**{trade['proposer_name']}** traded **{trade['offered_player_name']}** "
+                            f"({offered_role} · {trade['offered_team']}) to **{trade['recipient_name']}** "
+                            f"for **{trade['requested_player_name']}** "
+                            f"({requested_role} · {trade['requested_team']})."
+                        )
+                        if trade.get("resolved_at"):
+                            st.caption(f"Approved {trade['resolved_at']} UTC")
+            else:
+                st.caption("No trades have been completed yet.")
         else:
             st.info("Create league owner accounts to populate the leaderboard.")
         st.caption(f"{settings['league_name']} · {settings['region']}")

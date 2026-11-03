@@ -1,4 +1,5 @@
 import streamlit as st
+import json
 
 from demo_views import is_demo_mode, render_demo_my_matchup
 
@@ -41,6 +42,37 @@ else:
         st.info("Your team has a bye this week.")
     else:
         st.markdown(f"**Opponent:** {opponent_name}  \n**Owner:** {opponent_owner}")
-        st.caption("Match results will appear here when fantasy scoring is connected to this schedule.")
+        if matchup.get("team_1_score") is None or matchup.get("team_2_score") is None:
+            st.info("Matchup points will appear after the commissioner refreshes current split data and fantasy points.")
+        else:
+            my_score = matchup["team_1_score"] if is_team_1 else matchup["team_2_score"]
+            opponent_score = matchup["team_2_score"] if is_team_1 else matchup["team_1_score"]
+            winner = matchup.get("winner_user_id")
+            result_label = (
+                "Tie" if winner is None else
+                "Win" if int(winner) == int(user_id) else "Loss"
+            )
+            my_col, opponent_col = st.columns(2, gap="large")
+            my_col.metric(f"{team_name} · {result_label}", f"{my_score:.2f}")
+            opponent_col.metric(opponent_name, f"{opponent_score:.2f}")
+            st.caption(
+                f"{matchup.get('split_name', 'Current split')} · points refreshed "
+                f"{matchup.get('score_updated_at', 'recently')} UTC"
+            )
+            mine_json = matchup.get("team_1_breakdown_json" if is_team_1 else "team_2_breakdown_json") or "[]"
+            opponent_json = matchup.get("team_2_breakdown_json" if is_team_1 else "team_1_breakdown_json") or "[]"
+            try:
+                mine = json.loads(mine_json)
+                theirs = json.loads(opponent_json)
+            except (TypeError, ValueError):
+                mine, theirs = [], []
+            if mine or theirs:
+                my_details, opponent_details = st.columns(2, gap="large")
+                with my_details:
+                    st.markdown(f"**{team_name} roster points**")
+                    st.dataframe(mine, hide_index=True)
+                with opponent_details:
+                    st.markdown(f"**{opponent_name} roster points**")
+                    st.dataframe(theirs, hide_index=True)
 
 logout_button()
